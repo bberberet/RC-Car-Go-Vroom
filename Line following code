@@ -1,0 +1,59 @@
+""import RPi.GPIO as GPIO
+import time
+
+# Pin Definitions
+LEFT_SENSOR_PIN = 17
+RIGHT_SENSOR_PIN = 27
+STEERING_PWM_PIN = 18
+THROTTLE_PWM_PIN = 23
+PWM_FREQUENCY = 50
+
+# PID Control Parameters
+KP = 0.1
+KD = 0.01
+previous_error = 0
+
+# GPIO Setup
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(LEFT_SENSOR_PIN, GPIO.IN)
+GPIO.setup(RIGHT_SENSOR_PIN, GPIO.IN)
+GPIO.setup(STEERING_PWM_PIN, GPIO.OUT)
+GPIO.setup(THROTTLE_PWM_PIN, GPIO.OUT)
+
+# PWM Setup
+steering_pwm = GPIO.PWM(STEERING_PWM_PIN, PWM_FREQUENCY)
+throttle_pwm = GPIO.PWM(THROTTLE_PWM_PIN, PWM_FREQUENCY)
+steering_pwm.start(7.5)  # Neutral position
+throttle_pwm.start(7.5)  # Neutral throttle
+
+def line_follow():
+    global previous_error
+    while True:
+        left_detected = GPIO.input(LEFT_SENSOR_PIN)
+        right_detected = GPIO.input(RIGHT_SENSOR_PIN)
+
+        # Basic Line Following Logic
+        error = right_detected - left_detected
+        correction = KP * error + KD * (error - previous_error)
+        previous_error = error
+
+        # Adjust PWM for steering
+        steering_pwm.ChangeDutyCycle(7.5 + correction)
+
+        # Throttle Control (can be adjusted for speed control)
+        if left_detected == 0 and right_detected == 0:
+            throttle_pwm.ChangeDutyCycle(7.5)  # Maintain speed
+        else:
+            throttle_pwm.ChangeDutyCycle(7.0)  # Slow down if off the line
+
+        time.sleep(0.02)
+
+try:
+    line_follow()
+except KeyboardInterrupt:
+    pass
+finally:
+    steering_pwm.stop()
+    throttle_pwm.stop()
+    GPIO.cleanup()
+""
