@@ -1,0 +1,114 @@
+import tkinter as tk
+from tkinter.colorchooser import askcolor
+from PIL import ImageGrab
+import os
+import time
+
+class PaintApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Paint App with Stroke Undo and Save")
+
+        self.brush_size = 5
+        self.brush_color = "black"
+
+        self.canvas = tk.Canvas(root, bg="white", width=600, height=400)
+        self.canvas.pack()
+
+        self.canvas.config(cursor="pencil")
+
+        self.canvas.bind("<ButtonPress-1>", self.start_stroke)
+        self.canvas.bind("<B1-Motion>", self.paint)
+        self.canvas.bind("<ButtonRelease-1>", self.end_stroke)
+
+        self.old_x = None
+        self.old_y = None
+
+        self.strokes = []
+        self.current_stroke = []
+
+        controls = tk.Frame(root)
+        controls.pack()
+
+        self.brush_slider = tk.Scale(controls, from_=1, to=20, orient="horizontal", label="Brush Size")
+        self.brush_slider.set(self.brush_size)
+        self.brush_slider.pack(side="left")
+
+        color_btn = tk.Button(controls, text="Choose Color", command=self.choose_color)
+        color_btn.pack(side="left")
+
+        clear_btn = tk.Button(controls, text="Clear Canvas", command=self.clear_canvas)
+        clear_btn.pack(side="left")
+
+        undo_btn = tk.Button(controls, text="Undo", command=self.undo)
+        undo_btn.pack(side="left")
+
+        save_btn = tk.Button(controls, text="Save Drawing", command=self.save_drawing)
+        save_btn.pack(side="left")
+
+    def start_stroke(self, event):
+        self.old_x = event.x
+        self.old_y = event.y
+        self.current_stroke = []
+
+    def paint(self, event):
+        self.brush_size = self.brush_slider.get()
+        if self.old_x is not None and self.old_y is not None:
+            line_id = self.canvas.create_line(
+                self.old_x, self.old_y, event.x, event.y,
+                width=self.brush_size,
+                fill=self.brush_color,
+                capstyle=tk.ROUND, smooth=True
+            )
+            self.current_stroke.append(line_id)
+        self.old_x = event.x
+        self.old_y = event.y
+
+    def end_stroke(self, event):
+        if self.current_stroke:
+            self.strokes.append(self.current_stroke)
+        self.old_x = None
+        self.old_y = None
+        self.current_stroke = []
+
+    def choose_color(self):
+        color = askcolor(color=self.brush_color)[1]
+        if color:
+            self.brush_color = color
+
+    def clear_canvas(self):
+        self.canvas.delete("all")
+        self.strokes.clear()
+        self.current_stroke.clear()
+
+    def undo(self):
+        if self.strokes:
+            last_stroke = self.strokes.pop()
+            for line_id in last_stroke:
+                self.canvas.delete(line_id)
+
+    def save_drawing(self):
+        # Get canvas position on screen
+        x = self.root.winfo_rootx() + self.canvas.winfo_x()
+        y = self.root.winfo_rooty() + self.canvas.winfo_y()
+        x1 = x + self.canvas.winfo_width()
+        y1 = y + self.canvas.winfo_height()
+
+        # Grab the image from screen
+        img = ImageGrab.grab(bbox=(x, y, x1, y1))
+
+        # Save directory in Pictures folder
+        save_dir = os.path.expanduser("~/Pictures")
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        # Timestamp filename to avoid overwriting
+        filename = os.path.join(save_dir, f"drawing_{int(time.time())}.png")
+        img.save(filename)
+        print(f"Saved drawing as {filename}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PaintApp(root)
+    root.mainloop()
+
