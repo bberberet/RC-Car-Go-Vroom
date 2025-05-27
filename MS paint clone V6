@@ -1,0 +1,341 @@
+import tkinter as tk
+from tkinter.colorchooser import askcolor
+from PIL import ImageGrab
+import os
+import time
+import math
+
+class ToolTip:
+    """Simple tooltip for widgets."""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        widget.bind("<Enter>", self.show_tip)
+        widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event=None):
+        if self.tipwindow or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert") if self.widget.bbox("insert") else (0,0,0,0)
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + self.widget.winfo_rooty() + 20
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, background="#ffffe0", relief="solid", borderwidth=1,
+                         font=("tahoma", "8", "normal"))
+        label.pack(ipadx=4, ipady=2)
+
+    def hide_tip(self, event=None):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+        self.tipwindow = None
+
+class PaintApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Paint App - Klippy Style UI")
+
+        self.brush_size = 5
+        self.brush_color = "black"
+        self.current_tool = "pen"
+
+        # Grid settings
+        self.grid_enabled = False
+        self.grid_size = 20  # size of each grid square in pixels
+
+        # Root layout: left toolbar + top controls + canvas filling rest
+        self.root.geometry("1000x650")
+        self.root.configure(bg="#f0f0f0")
+
+        # Left toolbar frame
+        self.toolbar = tk.Frame(root, bg="#d3e0ea", width=120)
+        self.toolbar.pack(side="left", fill="y")
+
+        # Canvas + top controls frame
+        main_frame = tk.Frame(root, bg="#f0f0f0")
+        main_frame.pack(side="right", fill="both", expand=True)
+
+        # Top controls frame
+        self.top_controls = tk.Frame(main_frame, bg="#f0f0f0", height=50)
+        self.top_controls.pack(side="top", fill="x", padx=10, pady=5)
+
+        # Canvas frame (to allow padding)
+        canvas_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        canvas_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Canvas itself
+        self.canvas = tk.Canvas(canvas_frame, bg="white", width=850, height=580, relief=tk.SUNKEN, borderwidth=2)
+        self.canvas.pack(fill="both", expand=True)
+
+        self.canvas.config(cursor="pencil")
+
+        self.canvas.bind("<ButtonPress-1>", self.start_stroke)
+        self.canvas.bind("<B1-Motion>", self.paint)
+        self.canvas.bind("<ButtonRelease-1>", self.end_stroke)
+        self.canvas.bind("<Configure>", self.on_resize)
+
+        self.old_x = None
+        self.old_y = None
+
+        self.strokes = []
+        self.current_stroke = []
+
+        # Brush size slider in top controls
+        size_label = tk.Label(self.top_controls, text="Brush Size:", bg="#f0f0f0", font=("Segoe UI", 10))
+        size_label.pack(side="left", padx=(0,5))
+
+        self.brush_slider = tk.Scale(self.top_controls, from_=1, to=30, orient="horizontal", bg="#f0f0f0",
+                                     highlightthickness=0, length=150)
+        self.brush_slider.set(self.brush_size)
+        self.brush_slider.pack(side="left", padx=(0,15))
+
+        # Color chooser button
+        self.color_btn = tk.Button(self.top_controls, text="🎨 Color", command=self.choose_color,
+                                   bg="#4a90e2", fg="white", font=("Segoe UI", 10), relief=tk.FLAT, padx=10, pady=5)
+        self.color_btn.pack(side="left", padx=5)
+
+        # Undo button
+        self.undo_btn = tk.Button(self.top_controls, text="↺ Undo", command=self.undo,
+                                  bg="#f39c12", fg="white", font=("Segoe UI", 10), relief=tk.FLAT, padx=10, pady=5)
+        self.undo_btn.pack(side="left", padx=5)
+
+        # Clear button
+        self.clear_btn = tk.Button(self.top_controls, text="🗑 Clear", command=self.clear_canvas,
+                                   bg="#e74c3c", fg="white", font=("Segoe UI", 10), relief=tk.FLAT, padx=10, pady=5)
+        self.clear_btn.pack(side="left", padx=5)
+
+        # Save button
+        self.save_btn = tk.Button(self.top_controls, text="💾 Save", command=self.save_drawing,
+                                  bg="#27ae60", fg="white", font=("Segoe UI", 10), relief=tk.FLAT, padx=10, pady=5)
+        self.save_btn.pack(side="left", padx=5)
+
+        # Grid toggle button
+        self.grid_btn = tk.Button(self.top_controls, text="Grid Off", command=self.toggle_grid,
+                                  bg="#7f8c8d", fg="white", font=("Segoe UI", 10), relief=tk.FLAT, padx=10, pady=5)
+        self.grid_btn.pack(side="left", padx=5)
+
+        # Tool buttons in toolbar (vertical)
+        self.tool_buttons = {}
+        tools = [
+            ("pen", "✏️", "Pen: solid line"),
+            ("paintbrush", "🖌️", "Paintbrush: thick smooth"),
+            ("watercolor", "💧", "Watercolor: transparent"),
+            ("marker", "🖍️", "Marker: translucent"),
+            ("crayon", "🖍️", "Crayon: rough edges"),
+            ("eraser", "❌", "Eraser: remove paint")
+        ]
+
+        for tool, emoji, tip in tools:
+            b = tk.Button(self.toolbar, text=emoji, font=("Segoe UI Emoji", 20),
+                          width=4, height=2,
+                          relief=tk.RAISED, bg="#d3e0ea",
+                          command=lambda t=tool: self.select_tool(t))
+            b.pack(pady=8)
+            ToolTip(b, tip)
+            self.tool_buttons[tool] = b
+
+        self.update_tool_buttons()
+        self.draw_grid()
+
+    def toggle_grid(self):
+        self.grid_enabled = not self.grid_enabled
+        self.grid_btn.config(text="Grid On" if self.grid_enabled else "Grid Off",
+                             bg="#27ae60" if self.grid_enabled else "#7f8c8d")
+        self.draw_grid()
+
+    def draw_grid(self, event=None):
+        # Clear existing grid lines first
+        self.canvas.delete("grid_line")
+
+        if not self.grid_enabled:
+            return
+
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+
+        for x in range(0, width, self.grid_size):
+            self.canvas.create_line(x, 0, x, height, fill="#ccc", tags="grid_line")
+
+        for y in range(0, height, self.grid_size):
+            self.canvas.create_line(0, y, width, y, fill="#ccc", tags="grid_line")
+
+    def on_resize(self, event):
+        self.draw_grid()
+
+    def select_tool(self, tool):
+        self.current_tool = tool
+        self.update_tool_buttons()
+
+        cursor_map = {
+            "pen": "pencil",
+            "paintbrush": "dotbox",
+            "watercolor": "circle",
+            "marker": "plus",
+            "crayon": "cross",
+            "eraser": "spraycan"
+        }
+        self.canvas.config(cursor=cursor_map.get(tool, "pencil"))
+
+    def update_tool_buttons(self):
+        for t, btn in self.tool_buttons.items():
+            if t == self.current_tool:
+                btn.config(relief=tk.SUNKEN, bg="#82c4e6")
+            else:
+                btn.config(relief=tk.RAISED, bg="#d3e0ea")
+
+    def snap_to_grid(self, x, y):
+        if not self.grid_enabled:
+            return x, y
+        # Snap x and y to nearest grid point
+        grid_x = round(x / self.grid_size) * self.grid_size
+        grid_y = round(y / self.grid_size) * self.grid_size
+        return grid_x, grid_y
+
+    def start_stroke(self, event):
+        x, y = event.x, event.y
+        if self.grid_enabled:
+            x, y = self.snap_to_grid(x, y)
+        self.old_x = x
+        self.old_y = y
+        self.current_stroke = []
+
+    def paint(self, event):
+        size = self.brush_slider.get()
+        color = self.brush_color
+
+        x, y = event.x, event.y
+        if self.grid_enabled:
+            x, y = self.snap_to_grid(x, y)
+
+        if self.old_x is not None and self.old_y is not None:
+            if self.current_tool == "pen":
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size,
+                    fill=color,
+                    capstyle=tk.ROUND, smooth=True
+                )
+            elif self.current_tool == "paintbrush":
+                fill_color = color
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size * 2,
+                    fill=fill_color,
+                    capstyle=tk.ROUND, smooth=True
+                )
+            elif self.current_tool == "watercolor":
+                fill_color = color
+                alpha = 0.2  # simulate transparency with lighter color
+                # Tkinter doesn't support alpha, so use a lighter color approach
+                # Use PIL or more advanced libs for real alpha - out of scope here
+                fill_color = self._lighter_color(color, alpha)
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size * 3,
+                    fill=fill_color,
+                    capstyle=tk.ROUND, smooth=True
+                )
+            elif self.current_tool == "marker":
+                fill_color = color
+                alpha = 0.4
+                fill_color = self._lighter_color(color, alpha)
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size * 4,
+                    fill=fill_color,
+                    capstyle=tk.ROUND, smooth=True
+                )
+            elif self.current_tool == "crayon":
+                fill_color = color
+                # Crayon effect: draw small dots with some randomness
+                import random
+                for _ in range(size * 2):
+                    dx = self.old_x + random.randint(-size, size)
+                    dy = self.old_y + random.randint(-size, size)
+                    dot_id = self.canvas.create_oval(
+                        dx, dy, dx+2, dy+2,
+                        fill=fill_color, outline=fill_color
+                    )
+                    self.current_stroke.append(dot_id)
+                line_id = None
+            elif self.current_tool == "eraser":
+                # Eraser: draw white lines with size brush
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size * 2,
+                    fill="white",
+                    capstyle=tk.ROUND, smooth=True
+                )
+            else:
+                line_id = self.canvas.create_line(
+                    self.old_x, self.old_y, x, y,
+                    width=size,
+                    fill=color,
+                    capstyle=tk.ROUND, smooth=True
+                )
+            if line_id:
+                self.current_stroke.append(line_id)
+
+        self.old_x = x
+        self.old_y = y
+
+    def end_stroke(self, event):
+        if self.current_stroke:
+            self.strokes.append(self.current_stroke)
+            self.current_stroke = []
+        self.old_x = None
+        self.old_y = None
+
+    def undo(self):
+        if not self.strokes:
+            return
+        last_stroke = self.strokes.pop()
+        for item_id in last_stroke:
+            self.canvas.delete(item_id)
+
+    def clear_canvas(self):
+        self.canvas.delete("all")
+        self.strokes.clear()
+        self.draw_grid()
+
+    def save_drawing(self):
+        # Get canvas coordinates relative to screen
+        x = self.root.winfo_rootx() + self.canvas.winfo_x()
+        y = self.root.winfo_rooty() + self.canvas.winfo_y()
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+
+        # Take screenshot of the canvas area
+        filename = time.strftime("drawing_%Y%m%d_%H%M%S.png")
+        ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(filename)
+        print(f"Saved drawing to {filename}")
+
+    def choose_color(self):
+        color = askcolor(color=self.brush_color, title="Choose Brush Color")
+        if color[1]:
+            self.brush_color = color[1]
+
+    def _lighter_color(self, color, factor):
+        # Simple function to simulate transparency by blending color with white
+        # Tkinter does not support alpha blending
+        # color: hex string like "#rrggbb"
+        # factor: float 0-1; 0 = original color, 1 = white
+
+        if not color.startswith("#") or len(color) != 7:
+            return color
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+
+        r_new = int(r + (255 - r) * factor)
+        g_new = int(g + (255 - g) * factor)
+        b_new = int(b + (255 - b) * factor)
+
+        return f"#{r_new:02x}{g_new:02x}{b_new:02x}"
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PaintApp(root)
+    root.mainloop()
