@@ -1,0 +1,79 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import pigpio
+import time
+
+# GPIOs
+PWM_IN_THROTTLE = 23  # Pin 16
+PWM_IN_STEERING = 24  # Pin 18
+PWM_OUT_ESC = 13      # Pin 33
+PWM_OUT_SERVO = 19    # Pin 35
+BRAKE_LIGHT_PIN = 27  # Rear brake lights
+
+# Constants
+NEUTRAL_MIN = 1470
+NEUTRAL_MAX = 1530
+DECELERATION_THRESHOLD = -50  # µs drop to count as deceleration
+UPDATE_INTERVAL = 0.1  # Seconds
+
+pi = pigpio.pi()
+if not pi.connected:
+    print("Could not connect to pigpio daemon!")
+    exit()
+
+# Setup GPIO
+pi.set_mode(PWM_IN_THROTTLE, pigpio.INPUT)
+pi.set_mode(PWM_IN_STEERING, pigpio.INPUT)
+pi.set_mode(PWM_OUT_ESC, pigpio.OUTPUT)
+pi.set_mode(PWM_OUT_SERVO, pigpio.OUTPUT)
+pi.set_mode(BRAKE_LIGHT_PIN, pigpio.OUTPUT)
+pi.write(BRAKE_LIGHT_PIN, 0)  # Turn off initially
+
+# Track last pulse widths
+last_throttle_pw = 1500
+current_throttle_pw = 1500
+
+# Input-to-output passthrough
+def passthrough_cb(gpio_in, level, tick, out_pin):
+    global last_throttle_pw, current_throttle_pw
+    if level == 1:
+        passthrough_cb.start_ticks[out_pin] = tick
+    elif level == 0:
+        if out_pin in passthrough_cb.start_ticks:
+            width = pigpio.tickDiff(passthrough_cb.start_ticks[out_pin], tick)
+            pi.set_servo_pulsewidth(out_pin, width)
+            if out_pin == PWM_OUT_ESC:
+                last_throttle_pw = current_throttle_pw
+                current_throttle_pw = width
+
+passthrough_cb.start_ticks = {}
+
+# Set up callbacks
+cb1 = pi.callback(PWM_IN_THROTTLE, pigpio.EITHER_EDGE, lambda g, l, t: passthrough_cb(g, l, t, PWM_OUT_ESC))
+cb2 = pi.callback(PWM_IN_STEERING, pigpio.EITHER_EDGE, lambda g, l, t: passthrough_cb(g, l, t, PWM_OUT_SERVO))
+
+print("PWM passthrough running with brake light logic. Press Ctrl+C to stop.")
+
+try:
+    while True:
+        delta = current_throttle_pw - last_throttle_pw
+
+        # Condition for brake light:
+        if (NEUTRAL_MIN <= current_throttle_pw <= NEUTRAL_MAX) or (delta < DECELERATION_THRESHOLD):
+            pi.write(BRAKE_LIGHT_PIN, 1)  # Turn on brake light
+        else:
+            pi.write(BRAKE_LIGHT_PIN, 0)  # Turn off
+
+        time.sleep(UPDATE_INTERVAL)
+
+except KeyboardInterrupt:
+    pass
+
+# Cleanup
+cb1.cancel()
+cb2.cancel()
+pi.set_servo_pulsewidth(PWM_OUT_ESC, 0)
+pi.set_servo_pulsewidth(PWM_OUT_SERVO, 0)
+pi.write(BRAKE_LIGHT_PIN, 0)
+pi.stop()
