@@ -1,7 +1,7 @@
 __________________________________________________________________________________________________________________________________________________________________________________________________________________________
 This is the code for the soundtracks through the speaker. Each click is a new track, with a blank for no sound. Recommend setting up to run at boot. Can edit volume through code.
 -The audio files are downloadable via our github and are labled as they are within the code. Note your file location will be different.
-
+______________________________________________________________________________________________________________________________________________________________________________________________________________________-
 
 import RPi.GPIO as GPIO
 import time
@@ -83,7 +83,7 @@ sudo apt update && sudo apt install -y \
 Make sure these MP3 files exist in the following directory:
 
 ```
-/home/COCCedu2024/Downloads/planksoundtrack.mp3
+/home/COCCedu2024/Downloads/mariosoundtrack.mp3
 /home/COCCedu2024/Downloads/carsoundtrack.mp3
 /home/COCCedu2024/Downloads/katyperrysoundtrack.mp3
 ```
@@ -119,8 +119,89 @@ Reboot to test:
 
 ```bash
 sudo reboot
-```
+``
 
 The "plank" soundtrack will start automatically and cycle to the next track with each press of the button connected to GPIO 17 (pin 11) and GND (pin 14).
 
 _____________________________________________________________________________________________________________________________________________________________________________________-
+Here is the code for the car boot up sound. Sorry for forgetting to rename the file. Audio file is also downloadable in the github. Ensure that the correct filaes are in the correct locations as the boot chime is only a few seconds and the audio files are minutes.
+______________________________________________________________________________________________________________________________________________________
+
+---
+
+## 🔔 Boot-Up Sound (Mario Kart Start SFX)_____________________________________________________________________________
+
+This will play `Mario Kart Race Start - Sound Effect (HD).mp3` from your Downloads folder once after the desktop environment loads.
+
+---
+
+### ✅ 1. Create the Boot Chime Script______________________________________________________________________________________-
+
+```bash
+nano /home/COCCedu2024/boot_chime.py
+```
+
+Paste this code:___________________________________________________________________________________________________________
+```python
+import subprocess
+import time
+
+# Delay to let audio system initialize
+time.sleep(5)
+
+# Set audio volume
+subprocess.call(["amixer", "set", "Master", "80%"], stderr=subprocess.DEVNULL)
+
+# Play the Mario Kart sound effect
+subprocess.call([
+    "mpg123",
+    "/home/COCCedu2024/Downloads/Mario Kart Race Start - Sound Effect (HD).mp3"
+], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+```
+
+Save with `Ctrl+X`, then `Y`, then `Enter`.
+
+---
+
+### ✅ 2. Make It Executable_____________________________________________________________________________
+
+```bash
+chmod +x /home/COCCedu2024/boot_chime.py
+```
+
+---
+
+### ✅ 3. Create an Autostart Entry (GUI/Desktop Mode)___________________________________________________________________-
+
+```bash
+mkdir -p /home/COCCedu2024/.config/autostart
+nano /home/COCCedu2024/.config/autostart/boot_chime.desktop
+```
+
+Paste this:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=Boot Chime
+Exec=python3 /home/COCCedu2024/boot_chime.py
+StartupNotify=false
+```
+
+Save and exit.
+
+---
+
+### ✅ 4. Test It Without Rebooting (Optional)__________________________________________________________________________________
+
+```bash
+python3 /home/COCCedu2024/boot_chime.py
+```
+
+---
+
+🎉 Done! Your Raspberry Pi will now play the Mario Kart race start sound automatically when it finishes booting into the desktop.
+
+---
+
