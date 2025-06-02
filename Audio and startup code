@@ -1,0 +1,126 @@
+__________________________________________________________________________________________________________________________________________________________________________________________________________________________
+This is the code for the soundtracks through the speaker. Each click is a new track, with a blank for no sound. Recommend setting up to run at boot. Can edit volume through code.
+-The audio files are downloadable via our github and are labled as they are within the code. Note your file location will be different.
+
+
+import RPi.GPIO as GPIO
+import time
+import subprocess
+
+# === Configuration ===
+BUTTON_PIN = 17  # GPIO 17 (pin 11)
+tracks = [
+    None,  # Silent slot
+    "/home/COCCedu2024/Downloads/mariosoundtrack.mp3",
+    "/home/COCCedu2024/Downloads/carsoundtrack.mp3",
+    "/home/COCCedu2024/Downloads/katyperrysoundtrack.mp3"
+ 
+]
+track_index = 0
+player_process = None
+volume_control = "Master"  # Works with 3.5mm jack + PAM8406 amp
+
+# === Setup ===
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+print("Ready! Playing first track. Press the button to cycle through.")
+
+def stop_current_track():
+    global player_process
+    if player_process is not None:
+        player_process.terminate()
+        player_process = None
+
+def play_current_track():
+    global player_process
+    current_track = tracks[track_index]
+    subprocess.call(["amixer", "set", volume_control, "70%"], stderr=subprocess.DEVNULL)
+    if current_track:
+        print(f"Looping: {current_track}")
+        player_process = subprocess.Popen(
+            ["mpg123", "--loop", "-1", current_track],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    else:
+        print("Silent slot – no sound.")
+
+try:
+    play_current_track()
+
+    while True:
+        if GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            stop_current_track()
+            track_index = (track_index + 1) % len(tracks)
+            play_current_track()
+            time.sleep(0.4)  # debounce
+        time.sleep(0.05)
+except KeyboardInterrupt:
+    print("Shutting down...")
+finally:
+    stop_current_track()
+    GPIO.cleanup()
+___________________________________________________________________________________________________________________________________________________________________________________-
+Here are ChatGPT notes. Note that I used thonny to run the code but that was on the pi OS. If you have any questing please relay though Louie as I broke my phone
+
+
+## 🔧 Raspberry Pi Setup Instructions
+
+To run the MP3 loop player on boot with GPIO button control, install the following packages:
+
+```bash
+sudo apt update && sudo apt install -y \
+    python3 \
+    python3-rpi.gpio \
+    mpg123 \
+    alsa-utils \
+    thonny
+```
+
+## 📂 Audio File Locations
+
+Make sure these MP3 files exist in the following directory:
+
+```
+/home/COCCedu2024/Downloads/planksoundtrack.mp3
+/home/COCCedu2024/Downloads/carsoundtrack.mp3
+/home/COCCedu2024/Downloads/katyperrysoundtrack.mp3
+```
+
+## 🖥️ Autostart the Script on Boot (Desktop Mode Only)
+
+Create an autostart entry:
+
+```bash
+mkdir -p ~/.config/autostart
+nano ~/.config/autostart/soundplayer.desktop
+```
+
+Paste the following:
+
+```
+[Desktop Entry]
+Type=Application
+Name=Sound Player
+Exec=python3 /home/COCCedu2024/sound_cycle_button.py
+StartupNotify=false
+```
+
+Save with `Ctrl+X`, then `Y`, then `Enter`.
+
+Make sure the script is executable:
+
+```bash
+chmod +x /home/COCCedu2024/sound_cycle_button.py
+```
+
+Reboot to test:
+
+```bash
+sudo reboot
+```
+
+The "plank" soundtrack will start automatically and cycle to the next track with each press of the button connected to GPIO 17 (pin 11) and GND (pin 14).
+
+_____________________________________________________________________________________________________________________________________________________________________________________-
